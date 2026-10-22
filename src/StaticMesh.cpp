@@ -12,7 +12,7 @@ StaticMesh::StaticMesh(const MeshData& data) :
     _bbox(Bbox(data.vertices)) {
 }
 
-Bbox StaticMesh::getBbox() const
+Bbox StaticMesh::getBbox()
 {
     return _bbox;
 }

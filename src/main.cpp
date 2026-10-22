@@ -1,4 +1,3 @@
-
 #include <glad/gl.h>
 
 #define GLFW_INCLUDE_NONE
@@ -32,6 +31,7 @@ static std::shared_ptr<Texture> envmap;
 
 namespace OM3D {
 extern bool audit_bindings_before_draw;
+extern bool enable_prepass;
 }
 
 void parse_args(int argc, char** argv) {
@@ -40,7 +40,9 @@ void parse_args(int argc, char** argv) {
 
         if(arg == "--validate") {
             OM3D::audit_bindings_before_draw = true;
-        } else {
+        } else if(arg == "--z-prepass") {
+            OM3D::enable_prepass = true;
+        }else {
             std::cerr << "Unknown argument \"" << arg << "\"" << std::endl;
         }
     }
@@ -378,6 +380,7 @@ struct RendererState {
             state.tone_mapped_texture = Texture(size, ImageFormat::RGBA8_UNORM, WrapMode::Clamp);
             state.main_framebuffer = Framebuffer(&state.depth_texture, std::array{&state.lit_hdr_texture});
             state.tone_map_framebuffer = Framebuffer(nullptr, std::array{&state.tone_mapped_texture});
+            state.z_prepass_framebuffer = Framebuffer(&state.depth_texture);
         }
 
         return state;
@@ -391,6 +394,7 @@ struct RendererState {
 
     Framebuffer main_framebuffer;
     Framebuffer tone_map_framebuffer;
+    Framebuffer z_prepass_framebuffer;
 };
 
 
@@ -453,29 +457,41 @@ int main(int argc, char** argv) {
         {
             PROFILE_GPU("Frame");
 
+            // Z-Prepass
+            if (OM3D::enable_prepass) {
+                glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Z-Prepass");
+
+                renderer.z_prepass_framebuffer.bind(true, false);
+                scene->render_prepass();
+                glPopDebugGroup();
+            }
+
             // Render the scene
             {
-                PROFILE_GPU("Main pass");
+                glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Main Draw");
 
-                renderer.main_framebuffer.bind(true, true);
+                renderer.main_framebuffer.bind(false, true);
                 scene->render();
+                glPopDebugGroup();
             }
 
             // Apply a tonemap as a full screen pass
             {
-                PROFILE_GPU("Tonemap");
+                glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "ToneMap");
 
                 renderer.tone_map_framebuffer.bind(false, true);
                 tonemap_program->bind();
                 tonemap_program->set_uniform(HASH("exposure"), exposure);
                 renderer.lit_hdr_texture.bind(0);
                 draw_full_screen_triangle();
+                glPopDebugGroup();
             }
 
             // Blit tonemap result to screen
             {
-                PROFILE_GPU("Blit");
+                glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Blit");
                 blit_to_screen(renderer.tone_mapped_texture);
+                glPopDebugGroup();
             }
 
             // Draw GUI on top

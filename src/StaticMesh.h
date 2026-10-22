@@ -27,7 +27,7 @@ class StaticMesh : NonCopyable {
 
         void draw() const;
 
-        Bbox getBbox() const;
+        Bbox getBbox();
 
     private:
         TypedBuffer<Vertex> _vertex_buffer;

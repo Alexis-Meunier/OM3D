@@ -11,6 +11,10 @@ Scene::Scene() {
     _sky_material.set_depth_test_mode(DepthTestMode::None);
 
     _envmap = std::make_shared<Texture>(Texture::empty_cubemap(4, ImageFormat::RGBA8_UNORM));
+    const auto prepass_program = Program::from_files("z_prepass.frag", "basic.vert");
+    _prepass_material.set_program(prepass_program);
+
+    _prepass_enabled = false;
 }
 
 void Scene::add_object(SceneObject obj) {
@@ -52,6 +56,29 @@ void Scene::set_sun(float altitude, float azimuth, glm::vec3 color) {
     // Convert from polar to cartesian
     _sun_direction = glm::vec3(sin(azi) * cos(alt), sin(alt), cos(azi) * cos(alt));
     _sun_color = color;
+}
+
+void Scene::render_prepass() const {
+    TypedBuffer<shader::FrameData> buffer(nullptr, 1);
+    {
+        auto mapping = buffer.map(AccessType::WriteOnly);
+        mapping[0].camera.view_proj = _camera.view_proj_matrix();
+        mapping[0].camera.inv_view_proj = glm::inverse(_camera.view_proj_matrix());
+        mapping[0].camera.position = _camera.position();
+        mapping[0].point_light_count = u32(_point_lights.size());
+        mapping[0].sun_color = _sun_color;
+        mapping[0].sun_dir = glm::normalize(_sun_direction);
+        mapping[0].ibl_intensity = _ibl_intensity;
+    }
+    buffer.bind(BufferUsage::Uniform, 0);
+ 
+    for(const SceneObject& obj : _objects) {
+        if(!obj.getBbox().should_draw(_camera) || !obj.can_use_prepass()) {
+            continue;
+        }
+ 
+        obj.render_prepass(_prepass_material);
+    }
 }
 
 void Scene::render() const {

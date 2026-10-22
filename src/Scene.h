@@ -18,6 +18,8 @@ class Scene : NonMovable {
 
         static Result<std::unique_ptr<Scene>> from_gltf(const std::string& file_name);
 
+        void render_prepass() const;
+
         void render() const;
 
         void add_object(SceneObject obj);
@@ -44,6 +46,9 @@ class Scene : NonMovable {
         std::shared_ptr<Texture> _envmap;
         float _ibl_intensity = 1.0f;
         Material _sky_material;
+
+        bool _prepass_enabled;
+        Material _prepass_material;
 
         Camera _camera;
 };

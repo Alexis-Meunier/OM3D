@@ -19,6 +19,21 @@ void SceneObject::render() const {
     _mesh->draw();
 }
 
+void SceneObject::render_prepass(const Material& prepass_material) const {
+    if(!_mesh) {
+        return;
+    }
+
+    _material->set_depth_test_mode(DepthTestMode::Equal);
+    prepass_material.set_uniform(HASH("model"), transform());
+    prepass_material.bind();
+    _mesh->draw();
+}
+
+bool SceneObject::can_use_prepass() const {
+    return _mesh && _material && _material->is_opaque();
+}
+
 Bbox SceneObject::getBbox() const
 {
     return _mesh->getBbox();

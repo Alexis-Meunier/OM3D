@@ -18,7 +18,11 @@ class SceneObject {
 
         void render() const;
 
+        void render_prepass(const Material& prepass_material) const;
+
         const Material& material() const;
+
+        bool can_use_prepass() const;
 
         Bbox getBbox() const;
 
