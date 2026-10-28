@@ -46,6 +46,8 @@ class Material {
         void bind() const;
 
         static Material textured_pbr_material(bool alpha_test = false);
+        void set_alpha_tested(bool v) { _alpha_test = v; }
+        bool is_alpha_tested() const { return _alpha_test; }
 
     private:
         std::shared_ptr<Program> _program;
@@ -55,6 +57,7 @@ class Material {
         BlendMode _blend_mode = BlendMode::None;
         DepthTestMode _depth_test_mode = DepthTestMode::Standard;
         bool _double_sided = false;
+        bool _alpha_test = false;
 };
 
 }

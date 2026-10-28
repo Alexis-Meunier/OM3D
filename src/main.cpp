@@ -344,11 +344,8 @@ void gui(ImGuiRenderer& imgui) {
     }
 }
 
-
-
-
 void load_default_scene() {
-    load_scene(std::string(data_path) + "DamagedHelmet.glb");
+    load_scene(std::string(data_path) + "bistro.glb");
     load_envmap(std::string(data_path) + "pretoria_gardens.jpg");
 
     // Add lights
@@ -378,8 +375,8 @@ struct RendererState {
             state.depth_texture = Texture(size, ImageFormat::Depth32_FLOAT, WrapMode::Clamp);
             state.lit_hdr_texture = Texture(size, ImageFormat::RGBA16_FLOAT, WrapMode::Clamp);
             state.tone_mapped_texture = Texture(size, ImageFormat::RGBA8_UNORM, WrapMode::Clamp);
-            state.main_framebuffer = Framebuffer(&state.depth_texture, std::array{&state.lit_hdr_texture});
             state.tone_map_framebuffer = Framebuffer(nullptr, std::array{&state.tone_mapped_texture});
+            state.main_framebuffer = Framebuffer(&state.depth_texture, std::array{&state.lit_hdr_texture});
             state.z_prepass_framebuffer = Framebuffer(&state.depth_texture);
         }
 
@@ -470,7 +467,7 @@ int main(int argc, char** argv) {
             {
                 glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Main Draw");
 
-                renderer.main_framebuffer.bind(false, true);
+                renderer.main_framebuffer.bind(!OM3D::enable_prepass, true);
                 scene->render();
                 glPopDebugGroup();
             }

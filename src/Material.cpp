@@ -97,6 +97,7 @@ void Material::bind() const {
 
 Material Material::textured_pbr_material(bool alpha_test) {
     Material material;
+    material._alpha_test = alpha_test;
 
     std::vector<std::string> defines;
     if(alpha_test) {

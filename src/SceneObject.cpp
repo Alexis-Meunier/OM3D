@@ -14,6 +14,8 @@ void SceneObject::render() const {
         return;
     }
 
+    if (!_material->is_opaque())
+        _material->set_depth_test_mode(DepthTestMode::Standard);
     _material->set_uniform(HASH("model"), transform());
     _material->bind();
     _mesh->draw();
@@ -31,7 +33,7 @@ void SceneObject::render_prepass(const Material& prepass_material) const {
 }
 
 bool SceneObject::can_use_prepass() const {
-    return _mesh && _material && _material->is_opaque();
+    return _mesh && _material && _material->is_opaque() && !_material->is_alpha_tested();
 }
 
 Bbox SceneObject::getBbox() const
