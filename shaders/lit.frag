@@ -52,7 +52,7 @@ float shadow_factor(vec3 world_pos) {
 
     // 3. z is already in [0,1] (ZERO_TO_ONE clip control), so it is NOT remapped.
     //    Reverse-Z: nearer to the light = larger depth, so the bias is ADDED.
-    const float ref_depth = ndc.z + 0.002;
+    const float ref_depth = ndc.z + frame.sun_bias;
 
     // Outside the shadow map: consider it lit
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {

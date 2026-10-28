@@ -36,6 +36,7 @@ class Scene : NonMovable {
         void set_ibl_intensity(float intensity);
 
         void set_sun(float altitude, float azimuth, glm::vec3 color = glm::vec3(1.0f));
+        void set_sun_bias(const float& sun_bias);
         void update_shadow_matrix();
 
     private:
@@ -55,6 +56,8 @@ class Scene : NonMovable {
 
         Camera _camera;
         glm::mat4 shadow_view_proj = glm::identity<glm::mat4>();
+
+        float _sun_bias = 0.0f;
 };
 
 }

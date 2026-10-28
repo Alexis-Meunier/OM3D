@@ -112,12 +112,17 @@ void Scene::update_shadow_matrix() {
     const glm::vec3 center = (mn + mx) * 0.5f;
     const float radius = glm::length(mx - mn) * 0.5f;
 
-    const glm::vec3 dir = glm::normalize(_sun_direction);   // points toward the sun
+    const glm::vec3 dir = glm::normalize(_sun_direction);
     const glm::vec3 up = std::abs(dir.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
 
     const glm::mat4 view = glm::lookAt(center + dir * radius, center, up);
     const glm::mat4 proj = Camera::orthographic(-radius, radius, -radius, radius, 0.0f, 2.0f * radius);
     shadow_view_proj = proj * view;
+}
+
+void Scene::set_sun_bias(const float& sun_bias)
+{
+    _sun_bias = sun_bias;
 }
 
 void Scene::render_shadow_map()
@@ -131,6 +136,7 @@ void Scene::render_shadow_map()
         mapping[0].camera.inv_view_proj = glm::inverse(shadow_view_proj);
         mapping[0].camera.position = _camera.position();
         mapping[0].WS_to_CS = shadow_view_proj;
+        mapping[0].sun_bias = _sun_bias;
         mapping[0].point_light_count = 0;
         mapping[0].sun_color = _sun_color;
         mapping[0].sun_dir = glm::normalize(_sun_direction);
@@ -153,6 +159,7 @@ void Scene::render_prepass() const {
         mapping[0].camera.inv_view_proj = glm::inverse(_camera.view_proj_matrix());
         mapping[0].camera.position = _camera.position();
         mapping[0].WS_to_CS = shadow_view_proj;
+        mapping[0].sun_bias = _sun_bias;
         mapping[0].point_light_count = u32(_point_lights.size());
         mapping[0].sun_color = _sun_color;
         mapping[0].sun_dir = glm::normalize(_sun_direction);
@@ -183,6 +190,7 @@ void Scene::render() const {
         mapping[0].camera.inv_view_proj = glm::inverse(_camera.view_proj_matrix());
         mapping[0].camera.position = _camera.position();
         mapping[0].WS_to_CS = shadow_view_proj;
+        mapping[0].sun_bias = _sun_bias;
         mapping[0].point_light_count = u32(_point_lights.size());
         mapping[0].sun_color = _sun_color;
         mapping[0].sun_dir = glm::normalize(_sun_direction);
