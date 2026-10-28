@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <unordered_set>
 #include <unordered_map>
+#include <sstream>
+#include <iostream>
 
 namespace OM3D {
 
@@ -100,6 +102,16 @@ static GLuint create_shader(const std::string& src, GLenum type) {
         int len = 0;
         char log[1024] = {};
         glGetShaderInfoLog(handle, sizeof(log), &len, log);
+
+        std::istringstream ss(src);
+        std::string line;
+        int n = 1;
+        while (std::getline(ss, line)) {
+            // TODO: Find a way to not hardcode this
+            if (n >= 180 && n <= 195)
+                std::cerr << n << ": " << line << "\n";
+            ++n;
+        }
         FATAL(log);
     }
 

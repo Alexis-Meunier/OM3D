@@ -47,37 +47,42 @@ Bbox::Bbox(const std::vector<Vertex>& vertices)
     _center = min_pos + (max_pos - min_pos) / 2.0f;
 }
 
-bool Bbox::should_draw(const Camera& camera) const
+bool Bbox::should_draw(const Frustum& f, const glm::vec3& cam_pos, const glm::mat4& model) const
 {
-    const glm::vec3 cam_pos = camera.position();
-    const Frustum frustum = camera.build_frustum();
+    glm::vec3 corners[8];
+    for (size_t i = 0; i < 8; ++i)
+    {
+        corners[i] = glm::vec3(model * glm::vec4(_bounds[i], 1.0f)) - cam_pos;
+    }
 
-    std::vector<glm::vec3> normals = {
-        frustum._near_normal,
-        frustum._top_normal,
-        frustum._bottom_normal,
-        frustum._right_normal,
-        frustum._left_normal
+    const glm::vec3 planes[5] =
+    {
+        f._near_normal, f._top_normal, f._bottom_normal,
+        f._right_normal, f._left_normal
     };
 
-    // For every normal
-    for (const auto& normal : normals)
+    for (const glm::vec3 n : planes)
     {
         bool all_outside = true;
-        // If there is at least one of the bbox bound in it should be drawn
-        for (const auto& vertex : _bounds)
+        for (const glm::vec3& c : corners)
         {
-            if (dot(vertex - cam_pos, normal) >= 0)
+            if (glm::dot(c, n) >= 0.0f)
             {
                 all_outside = false;
                 break;
             }
         }
-        // If all bounds are outside, it is out of view
         if (all_outside)
+        {
             return false;
+        }
     }
-    return true;    
+    return true;
+}
+
+std::vector<glm::vec3> Bbox::get_bounds() const
+{
+    return _bounds;
 }
 
 }

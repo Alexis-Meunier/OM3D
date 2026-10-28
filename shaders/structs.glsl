@@ -7,6 +7,7 @@ struct CameraData {
 
 struct FrameData {
     CameraData camera;
+    mat4 WS_to_CS;
 
     vec3 sun_dir;
     uint point_light_count;

@@ -19,6 +19,7 @@ class SceneObject {
         void render() const;
 
         void render_prepass(const Material& prepass_material) const;
+        void render_shadow_map(const Material& shadow_material) const;
 
         const Material& material() const;
 

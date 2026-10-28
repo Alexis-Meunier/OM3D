@@ -18,7 +18,8 @@ class Bbox {
         Bbox(Bbox&) = default;
         Bbox(const std::vector<Vertex>& vertices);
 
-        bool should_draw(const Camera& camera) const;
+        bool should_draw(const Frustum& frustum, const glm::vec3& cam_pos, const glm::mat4& model) const;
+        std::vector<glm::vec3> get_bounds() const;
 
         friend std::ostream& operator<<(const Bbox& bbox, std::ostream& os);
 

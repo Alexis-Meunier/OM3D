@@ -24,6 +24,8 @@ layout(binding = 1) uniform sampler2D in_normal_texture;
 layout(binding = 2) uniform sampler2D in_metal_rough;
 layout(binding = 3) uniform sampler2D in_emissive;
 
+layout(binding = 6) uniform sampler2DShadow shadow_map;
+
 uniform vec3 base_color_factor;
 uniform vec2 metal_rough_factor;
 uniform vec3 emissive_factor;
@@ -39,6 +41,27 @@ layout(binding = 0) uniform Data {
 layout(binding = 1) buffer PointLights {
     PointLight point_lights[];
 };
+
+float shadow_factor(vec3 world_pos) {
+    // 1. world space -> light clip space
+    const vec4 clip = frame.WS_to_CS * vec4(world_pos, 1.0);
+    const vec3 ndc = clip.xyz / clip.w;
+
+    // 2. NDC -> texture coordinates. Only xy goes from [-1,1] to [0,1].
+    const vec2 uv = ndc.xy * 0.5 + 0.5;
+
+    // 3. z is already in [0,1] (ZERO_TO_ONE clip control), so it is NOT remapped.
+    //    Reverse-Z: nearer to the light = larger depth, so the bias is ADDED.
+    const float ref_depth = ndc.z + 0.002;
+
+    // Outside the shadow map: consider it lit
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
+        return 1.0;
+    }
+
+    // 4. The sampler does the depth comparison itself: texture(sampler, vec3(uv, reference))
+    return texture(shadow_map, vec3(uv, ref_depth));
+}
 
 void main() {
     const vec3 normal_map = unpack_normal_map(texture(in_normal_texture, in_uv).xy);
@@ -63,11 +86,13 @@ void main() {
 
     const vec3 to_view = (frame.camera.position - in_position);
     const vec3 view_dir = normalize(to_view);
+    const float shadow = shadow_factor(in_position);
 
     vec3 acc = texture(in_emissive, in_uv).rgb * emissive_factor;
     acc += eval_ibl(in_envmap, brdf_lut, normal, view_dir, base_color, metallic, roughness) * frame.ibl_intensity;
     {
-        acc += frame.sun_color * eval_brdf(normal, view_dir, frame.sun_dir, base_color, metallic, roughness);
+        acc += shadow * frame.sun_color * eval_brdf(normal, view_dir, frame.sun_dir, base_color, metallic, roughness);
+        // acc += frame.sun_color * eval_brdf(normal, view_dir, frame.sun_dir, base_color, metallic, roughness);
 
         for(uint i = 0; i != frame.point_light_count; ++i) {
             PointLight light = point_lights[i];

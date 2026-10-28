@@ -1,5 +1,6 @@
 #include "Scene.h"
 
+#include <iostream>
 #include <TypedBuffer.h>
 
 #include <shader_structs.h>
@@ -13,6 +14,7 @@ Scene::Scene() {
     _envmap = std::make_shared<Texture>(Texture::empty_cubemap(4, ImageFormat::RGBA8_UNORM));
     const auto prepass_program = Program::from_files("z_prepass.frag", "basic.vert");
     _prepass_material.set_program(prepass_program);
+    _shadow_map_material.set_program(prepass_program);
 
     _prepass_enabled = false;
 }
@@ -58,6 +60,91 @@ void Scene::set_sun(float altitude, float azimuth, glm::vec3 color) {
     _sun_color = color;
 }
 
+float average(float min, float max)
+{
+    return min + (max - min) / 2.0f;
+}
+
+glm::vec3 get_sun_position(const std::vector<SceneObject>& objects, const glm::vec3& sun_dir, float& radius)
+{
+    glm::vec3 max_pos = objects[0].getBbox().get_bounds()[0];
+    glm::vec3 min_pos = objects[0].getBbox().get_bounds()[0];
+
+    for (const auto& obj : objects)
+    {
+        auto bbox = obj.getBbox();
+        for (const auto& bounds : bbox.get_bounds())
+        {
+            if (bounds.x > max_pos.x)
+                max_pos.x = bounds.x;
+            else if (bounds.x < min_pos.x)
+                min_pos.x = bounds.x;
+
+            if (bounds.y > max_pos.y)
+                max_pos.y = bounds.y;
+            else if (bounds.y < min_pos.y)
+                min_pos.y = bounds.y;
+
+            if (bounds.z > max_pos.z)
+                max_pos.z = bounds.z;
+            else if (bounds.z < min_pos.z)
+                min_pos.z = bounds.z;
+        }
+    }
+
+    glm::vec3 middle = glm::vec3(average(min_pos.x, max_pos.x), average(min_pos.y, max_pos.y), average(min_pos.z, max_pos.z));
+    glm::vec3 radius_vec = middle - glm::vec3(min_pos.x, max_pos.y, max_pos.z);
+    radius = sqrt(radius_vec.x * radius_vec.x + radius_vec.y * radius_vec.y + radius_vec.z * radius_vec.z);
+
+    return middle + glm::normalize(sun_dir) * radius;
+}
+
+void Scene::update_shadow_matrix() {
+    glm::vec3 mn(std::numeric_limits<float>::max());
+    glm::vec3 mx(std::numeric_limits<float>::lowest());
+    for (const SceneObject& obj : _objects) {
+        for (const glm::vec3& c : obj.getBbox().get_bounds()) {
+            const glm::vec3 w = glm::vec3(obj.transform() * glm::vec4(c, 1.0f));
+            mn = glm::min(mn, w);
+            mx = glm::max(mx, w);
+        }
+    }
+    const glm::vec3 center = (mn + mx) * 0.5f;
+    const float radius = glm::length(mx - mn) * 0.5f;
+
+    const glm::vec3 dir = glm::normalize(_sun_direction);   // points toward the sun
+    const glm::vec3 up = std::abs(dir.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+
+    const glm::mat4 view = glm::lookAt(center + dir * radius, center, up);
+    const glm::mat4 proj = Camera::orthographic(-radius, radius, -radius, radius, 0.0f, 2.0f * radius);
+    shadow_view_proj = proj * view;
+}
+
+void Scene::render_shadow_map()
+{
+    update_shadow_matrix();
+
+    TypedBuffer<shader::FrameData> buffer(nullptr, 1);
+    {
+        auto mapping = buffer.map(AccessType::WriteOnly);
+        mapping[0].camera.view_proj = shadow_view_proj;
+        mapping[0].camera.inv_view_proj = glm::inverse(shadow_view_proj);
+        mapping[0].camera.position = _camera.position();
+        mapping[0].WS_to_CS = shadow_view_proj;
+        mapping[0].point_light_count = 0;
+        mapping[0].sun_color = _sun_color;
+        mapping[0].sun_dir = glm::normalize(_sun_direction);
+        mapping[0].ibl_intensity = _ibl_intensity;
+    }
+    buffer.bind(BufferUsage::Uniform, 0);
+
+    for (const SceneObject& obj : _objects)
+    {
+        if (obj.material().is_opaque())
+            obj.render_shadow_map(_shadow_map_material);
+    }
+}
+
 void Scene::render_prepass() const {
     TypedBuffer<shader::FrameData> buffer(nullptr, 1);
     {
@@ -65,6 +152,7 @@ void Scene::render_prepass() const {
         mapping[0].camera.view_proj = _camera.view_proj_matrix();
         mapping[0].camera.inv_view_proj = glm::inverse(_camera.view_proj_matrix());
         mapping[0].camera.position = _camera.position();
+        mapping[0].WS_to_CS = shadow_view_proj;
         mapping[0].point_light_count = u32(_point_lights.size());
         mapping[0].sun_color = _sun_color;
         mapping[0].sun_dir = glm::normalize(_sun_direction);
@@ -72,12 +160,17 @@ void Scene::render_prepass() const {
     }
     buffer.bind(BufferUsage::Uniform, 0);
  
-    for(const SceneObject& obj : _objects) {
-        if(!obj.getBbox().should_draw(_camera) || !obj.can_use_prepass()) {
-            continue;
+    {
+        const Frustum frustum = _camera.build_frustum();
+        const glm::vec3 cam_pos = _camera.position();
+
+        for(const SceneObject& obj : _objects) {
+            if(!obj.getBbox().should_draw(frustum, cam_pos, obj.transform()) || !obj.can_use_prepass()) {
+                continue;
+            }
+    
+            obj.render_prepass(_prepass_material);
         }
- 
-        obj.render_prepass(_prepass_material);
     }
 }
 
@@ -89,6 +182,7 @@ void Scene::render() const {
         mapping[0].camera.view_proj = _camera.view_proj_matrix();
         mapping[0].camera.inv_view_proj = glm::inverse(_camera.view_proj_matrix());
         mapping[0].camera.position = _camera.position();
+        mapping[0].WS_to_CS = shadow_view_proj;
         mapping[0].point_light_count = u32(_point_lights.size());
         mapping[0].sun_color = _sun_color;
         mapping[0].sun_dir = glm::normalize(_sun_direction);
@@ -126,9 +220,12 @@ void Scene::render() const {
 
     // Render every object
     {
+        const Frustum frustum = _camera.build_frustum();
+        const glm::vec3 cam_pos = _camera.position();
+
         // Opaque first
         for(const SceneObject& obj : _objects) {
-            if (!obj.getBbox().should_draw(_camera))
+            if (!obj.getBbox().should_draw(frustum, cam_pos, obj.transform()))
                 continue;
 
             if(obj.material().is_opaque()) {
@@ -138,7 +235,7 @@ void Scene::render() const {
 
         // Transparent after
         for(const SceneObject& obj : _objects) {
-            if (!obj.getBbox().should_draw(_camera))
+            if (!obj.getBbox().should_draw(frustum, cam_pos, obj.transform()))
                 continue;
 
             if(!obj.material().is_opaque()) {

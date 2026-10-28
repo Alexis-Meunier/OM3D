@@ -19,6 +19,7 @@ class Scene : NonMovable {
         static Result<std::unique_ptr<Scene>> from_gltf(const std::string& file_name);
 
         void render_prepass() const;
+        void render_shadow_map();
 
         void render() const;
 
@@ -35,6 +36,7 @@ class Scene : NonMovable {
         void set_ibl_intensity(float intensity);
 
         void set_sun(float altitude, float azimuth, glm::vec3 color = glm::vec3(1.0f));
+        void update_shadow_matrix();
 
     private:
         std::vector<SceneObject> _objects;
@@ -49,8 +51,10 @@ class Scene : NonMovable {
 
         bool _prepass_enabled;
         Material _prepass_material;
+        Material _shadow_map_material;
 
         Camera _camera;
+        glm::mat4 shadow_view_proj = glm::identity<glm::mat4>();
 };
 
 }

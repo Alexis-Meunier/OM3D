@@ -345,7 +345,7 @@ void gui(ImGuiRenderer& imgui) {
 }
 
 void load_default_scene() {
-    load_scene(std::string(data_path) + "bistro.glb");
+    load_scene(std::string(data_path) + "forest.glb");
     load_envmap(std::string(data_path) + "pretoria_gardens.jpg");
 
     // Add lights
@@ -373,11 +373,13 @@ struct RendererState {
 
         if(state.size.x > 0 && state.size.y > 0) {
             state.depth_texture = Texture(size, ImageFormat::Depth32_FLOAT, WrapMode::Clamp);
+            state.shadow_depth_texture = Texture(glm::uvec2(2048, 2048), ImageFormat::Depth32_FLOAT, WrapMode::Clamp, true);
             state.lit_hdr_texture = Texture(size, ImageFormat::RGBA16_FLOAT, WrapMode::Clamp);
             state.tone_mapped_texture = Texture(size, ImageFormat::RGBA8_UNORM, WrapMode::Clamp);
             state.tone_map_framebuffer = Framebuffer(nullptr, std::array{&state.tone_mapped_texture});
             state.main_framebuffer = Framebuffer(&state.depth_texture, std::array{&state.lit_hdr_texture});
             state.z_prepass_framebuffer = Framebuffer(&state.depth_texture);
+            state.shadow_map_framebuffer = Framebuffer(&state.shadow_depth_texture);
         }
 
         return state;
@@ -386,11 +388,13 @@ struct RendererState {
     glm::uvec2 size = {};
 
     Texture depth_texture;
+    Texture shadow_depth_texture;
     Texture lit_hdr_texture;
     Texture tone_mapped_texture;
 
     Framebuffer main_framebuffer;
     Framebuffer tone_map_framebuffer;
+    Framebuffer shadow_map_framebuffer;
     Framebuffer z_prepass_framebuffer;
 };
 
@@ -460,6 +464,16 @@ int main(int argc, char** argv) {
 
                 renderer.z_prepass_framebuffer.bind(true, false);
                 scene->render_prepass();
+                glPopDebugGroup();
+            }
+
+            // Shadow-Map
+            {
+                glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Shadow Map");
+
+                renderer.shadow_map_framebuffer.bind(true, false);
+                scene->render_shadow_map();
+                renderer.shadow_depth_texture.bind(6);
                 glPopDebugGroup();
             }
 

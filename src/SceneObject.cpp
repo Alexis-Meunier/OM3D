@@ -21,6 +21,17 @@ void SceneObject::render() const {
     _mesh->draw();
 }
 
+void SceneObject::render_shadow_map(const Material& shadow_material) const
+{
+    if(!_material || !_mesh) {
+        return;
+    }
+
+    shadow_material.set_uniform(HASH("model"), transform());
+    shadow_material.bind();
+    _mesh->draw();
+}
+
 void SceneObject::render_prepass(const Material& prepass_material) const {
     if(!_mesh) {
         return;
