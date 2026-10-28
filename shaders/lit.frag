@@ -43,24 +43,18 @@ layout(binding = 1) buffer PointLights {
 };
 
 float shadow_factor(vec3 world_pos) {
-    // 1. world space -> light clip space
     const vec4 clip = frame.WS_to_CS * vec4(world_pos, 1.0);
-    const vec3 ndc = clip.xyz / clip.w;
+    const vec3 normaled = clip.xyz / clip.w;
 
-    // 2. NDC -> texture coordinates. Only xy goes from [-1,1] to [0,1].
-    const vec2 uv = ndc.xy * 0.5 + 0.5;
+    const vec2 uv = (normaled.xy + 1.0) / 2.0;
 
-    // 3. z is already in [0,1] (ZERO_TO_ONE clip control), so it is NOT remapped.
-    //    Reverse-Z: nearer to the light = larger depth, so the bias is ADDED.
-    const float ref_depth = ndc.z + frame.sun_bias;
+    const float depth_bias = normaled.z + frame.sun_bias;
 
-    // Outside the shadow map: consider it lit
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
         return 1.0;
     }
 
-    // 4. The sampler does the depth comparison itself: texture(sampler, vec3(uv, reference))
-    return texture(shadow_map, vec3(uv, ref_depth));
+    return texture(shadow_map, vec3(uv, depth_bias));
 }
 
 void main() {
