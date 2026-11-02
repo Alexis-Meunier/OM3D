@@ -19,6 +19,7 @@ class Scene : NonMovable {
         static Result<std::unique_ptr<Scene>> from_gltf(const std::string& file_name);
 
         void render_prepass(const RenderPass& state);
+        void render_shadow_map();
 
         void render() const;
 

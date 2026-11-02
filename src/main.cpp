@@ -31,6 +31,8 @@ static std::unique_ptr<Scene> scene;
 static std::shared_ptr<Texture> envmap;
 static DebugState debugState = DEPTH;
 
+static std::string render_path = "bistro.glb";
+
 namespace OM3D {
 extern bool audit_bindings_before_draw;
 extern bool enable_prepass;
@@ -47,6 +49,13 @@ void parse_args(int argc, char** argv) {
             OM3D::enable_prepass = true;
         } else if(arg == "--g-buffer") {
             OM3D::g_buffer_enabled = true;
+        } else if(arg == "--scene" || arg == "-s") {
+            if (i == argc - 1)
+            {
+                std::cerr << "Scene path argument forgotten. Defaulting to " << render_path << std::endl;
+                return;
+            }
+            render_path = argv[++i];
         }else {
             std::cerr << "Unknown argument \"" << arg << "\"" << std::endl;
         }
@@ -218,7 +227,7 @@ void gui(ImGuiRenderer& imgui) {
         if(ImGui::BeginMenu("Debug")) {
 
             const char* items[] = { "DEPTH", "ALBEDO", "NORMAL", "ROUGHNESS", "METALLICITY", "FULL"};
-            static int item_current = 5;
+            static int item_current = 0;
             ImGui::Combo("State", &item_current, items, 6);
             debugState = DebugState(item_current);
             ImGui::EndMenu();
@@ -361,7 +370,7 @@ void gui(ImGuiRenderer& imgui) {
 }
 
 void load_default_scene() {
-    load_scene(std::string(data_path) + "bistro.glb");
+    load_scene(std::string(data_path) + render_path);
     load_envmap(std::string(data_path) + "pretoria_gardens.jpg");
 
     // Add lights
@@ -518,17 +527,17 @@ int main(int argc, char** argv) {
                     glPopDebugGroup();
                 }
             } else {
-                // Shadow map
+                // Shadow Map -- TODO: Draw it once
                 {
                     glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Shadow Map");
                     renderer.shadow_map_framebuffer.bind(true, false);
-                    scene->render_prepass(SHADOW_PASS);
-                    renderer.shadow_depth_texture.bind(6);
+                    scene->render_shadow_map();
                     glPopDebugGroup();
                 }
                 // Main draw
                 {
                     glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Main Draw");
+                    renderer.shadow_depth_texture.bind(6);
                     renderer.main_framebuffer.bind(!OM3D::enable_prepass, true);
                     scene->render();
                     glPopDebugGroup();

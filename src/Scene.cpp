@@ -127,9 +127,33 @@ void Scene::update_shadow_matrix() {
     shadow_view_proj = proj * view;
 }
 
-void Scene::render_prepass(const RenderPass& state) {
+void Scene::render_shadow_map()
+{
     update_shadow_matrix();
 
+    TypedBuffer<shader::FrameData> buffer(nullptr, 1);
+    {
+        auto mapping = buffer.map(AccessType::WriteOnly);
+        mapping[0].camera.view_proj = shadow_view_proj;
+        mapping[0].camera.inv_view_proj = glm::inverse(shadow_view_proj);
+        mapping[0].camera.position = _camera.position();
+        mapping[0].WS_to_CS = shadow_view_proj;
+        mapping[0].sun_bias = _sun_bias;
+        mapping[0].point_light_count = 0;
+        mapping[0].sun_color = _sun_color;
+        mapping[0].sun_dir = glm::normalize(_sun_direction);
+        mapping[0].ibl_intensity = _ibl_intensity;
+    }
+    buffer.bind(BufferUsage::Uniform, 0);
+
+    for (const SceneObject& obj : _objects)
+    {
+        if (obj.material().is_opaque())
+            obj.render(SHADOW_PASS);
+    }
+}
+
+void Scene::render_prepass(const RenderPass& state) {
     TypedBuffer<shader::FrameData> buffer(nullptr, 1);
     {
         auto mapping = buffer.map(AccessType::WriteOnly);
@@ -138,7 +162,7 @@ void Scene::render_prepass(const RenderPass& state) {
         mapping[0].camera.position = _camera.position();
         mapping[0].WS_to_CS = shadow_view_proj;
         mapping[0].sun_bias = _sun_bias;
-        mapping[0].point_light_count = u32(_point_lights.size());
+        mapping[0].point_light_count = 0;
         mapping[0].sun_color = _sun_color;
         mapping[0].sun_dir = glm::normalize(_sun_direction);
         mapping[0].ibl_intensity = _ibl_intensity;
