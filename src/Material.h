@@ -21,6 +21,14 @@ enum class DepthTestMode {
     None
 };
 
+enum RenderPass {
+    MAIN = 0,
+    G_BUFFER_DEFERRED = 1,
+    G_BUFFER_RENDER = 2,
+    Z_PREPASS = 3,
+    SHADOW_PASS = 4,
+};
+
 class Material {
 
     public:
@@ -40,7 +48,7 @@ class Material {
         // Uniform is set immediately and might get overriden by 'set_uniform' called on OTHER materials
         template<typename... Args>
         void set_uniform(Args&&... args) const {
-            _program->set_uniform(FWD(args)...);
+            _programs[_render_state]->set_uniform(FWD(args)...);
         }
 
         void bind() const;
@@ -49,8 +57,10 @@ class Material {
         void set_alpha_tested(bool v) { _alpha_test = v; }
         bool is_alpha_tested() const { return _alpha_test; }
 
+        void set_rendering_state(const RenderPass& pass);
+
     private:
-        std::shared_ptr<Program> _program;
+        std::shared_ptr<Program> _programs[5];
         std::vector<std::pair<u32, std::shared_ptr<Texture>>> _textures;
         std::vector<std::pair<u32, UniformValue>> _uniforms;
 
@@ -58,6 +68,8 @@ class Material {
         DepthTestMode _depth_test_mode = DepthTestMode::Standard;
         bool _double_sided = false;
         bool _alpha_test = false;
+
+        RenderPass _render_state = MAIN;
 };
 
 }

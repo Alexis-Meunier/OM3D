@@ -26,6 +26,7 @@ struct {
 
 bool audit_bindings_before_draw = false;
 bool enable_prepass = false;
+bool g_buffer_enabled = false;
 
 void debug_out(GLenum, GLenum type, GLuint, GLenum sev, GLsizei, const char* msg, const void*) {
     if(sev == GL_DEBUG_SEVERITY_NOTIFICATION) {

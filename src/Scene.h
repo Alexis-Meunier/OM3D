@@ -18,8 +18,9 @@ class Scene : NonMovable {
 
         static Result<std::unique_ptr<Scene>> from_gltf(const std::string& file_name);
 
-        void render_prepass() const;
+        void render_prepass(const RenderPass& state) const;
         void render_shadow_map();
+        void render_g_buffer();
 
         void render() const;
 
@@ -34,6 +35,8 @@ class Scene : NonMovable {
 
         void set_envmap(std::shared_ptr<Texture> env);
         void set_ibl_intensity(float intensity);
+
+        void set_debug_state(const DebugState& state);
 
         void set_sun(float altitude, float azimuth, glm::vec3 color = glm::vec3(1.0f));
         void set_sun_bias(const float& sun_bias);
@@ -50,9 +53,7 @@ class Scene : NonMovable {
         float _ibl_intensity = 1.0f;
         Material _sky_material;
 
-        bool _prepass_enabled;
-        Material _prepass_material;
-        Material _shadow_map_material;
+        DebugState _state = ALBEDO;
 
         Camera _camera;
         glm::mat4 shadow_view_proj = glm::identity<glm::mat4>();

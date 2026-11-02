@@ -72,6 +72,8 @@ Texture::Texture(const glm::uvec2 &size, ImageFormat format, WrapMode wrap, bool
     glTextureParameteri(_handle.get(), GL_TEXTURE_WRAP_T, gl_wrap);
     if (is_shadow_pass)
     {
+        glTextureParameteri(_handle.get(), GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTextureParameteri(_handle.get(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTextureParameteri(_handle.get(), GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
         glTextureParameteri(_handle.get(), GL_TEXTURE_COMPARE_FUNC, GL_GEQUAL);
     }

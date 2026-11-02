@@ -11,15 +11,24 @@
 
 namespace OM3D {
 
+enum DebugState {
+    DEPTH = 0,
+    ALBEDO = 1,
+    NORMAL = 2,
+    ROUGHNESS = 3,
+    METALLICITY = 4,
+};
+
 class SceneObject {
 
     public:
         SceneObject(std::shared_ptr<StaticMesh> mesh = nullptr, std::shared_ptr<Material> material = nullptr);
 
-        void render() const;
+        void render(const RenderPass& state = MAIN) const;
 
-        void render_prepass(const Material& prepass_material) const;
-        void render_shadow_map(const Material& shadow_material) const;
+        // void render_prepass() const;
+        // void render_shadow_map() const;
+        // void render_g_buffer() const;
 
         const Material& material() const;
 

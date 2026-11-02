@@ -29,10 +29,12 @@ static float exposure = 0.33f;
 
 static std::unique_ptr<Scene> scene;
 static std::shared_ptr<Texture> envmap;
+static DebugState debugState = DEPTH;
 
 namespace OM3D {
 extern bool audit_bindings_before_draw;
 extern bool enable_prepass;
+extern bool g_buffer_enabled;
 }
 
 void parse_args(int argc, char** argv) {
@@ -43,6 +45,8 @@ void parse_args(int argc, char** argv) {
             OM3D::audit_bindings_before_draw = true;
         } else if(arg == "--z-prepass") {
             OM3D::enable_prepass = true;
+        } else if(arg == "--g-buffer") {
+            OM3D::g_buffer_enabled = true;
         }else {
             std::cerr << "Unknown argument \"" << arg << "\"" << std::endl;
         }
@@ -211,6 +215,15 @@ void gui(ImGuiRenderer& imgui) {
             ImGui::EndMenu();
         }
 
+        if(ImGui::BeginMenu("Debug")) {
+
+            const char* items[] = { "DEPTH", "ALBEDO", "NORMAL", "ROUGHNESS", "METALLICITY"};
+            static int item_current = 0;
+            ImGui::Combo("State", &item_current, items, 5);
+            debugState = DebugState(item_current);
+            ImGui::EndMenu();
+        }
+
         if(ImGui::BeginMenu("Lighting")) {
             ImGui::DragFloat("Exposure", &exposure, 0.01f, 0.01f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
 
@@ -348,7 +361,7 @@ void gui(ImGuiRenderer& imgui) {
 }
 
 void load_default_scene() {
-    load_scene(std::string(data_path) + "forest.glb");
+    load_scene(std::string(data_path) + "bistro.glb");
     load_envmap(std::string(data_path) + "pretoria_gardens.jpg");
 
     // Add lights
@@ -383,6 +396,17 @@ struct RendererState {
             state.main_framebuffer = Framebuffer(&state.depth_texture, std::array{&state.lit_hdr_texture});
             state.z_prepass_framebuffer = Framebuffer(&state.depth_texture);
             state.shadow_map_framebuffer = Framebuffer(&state.shadow_depth_texture);
+
+            // G-Buffer Definition
+            state.albedo_tex = Texture(size, ImageFormat::RGBA8_sRGB, WrapMode::Clamp);
+            state.norm_tex = Texture(size, ImageFormat::RGBA8_UNORM, WrapMode::Clamp);
+            state.G_buffer = Framebuffer(
+                &state.depth_texture,
+                std::array{
+                    &state.albedo_tex,
+                    &state.norm_tex,
+                }
+            );
         }
 
         return state;
@@ -399,6 +423,11 @@ struct RendererState {
     Framebuffer tone_map_framebuffer;
     Framebuffer shadow_map_framebuffer;
     Framebuffer z_prepass_framebuffer;
+
+    // G-Buffer Declaration
+    Texture norm_tex;
+    Texture albedo_tex;
+    Framebuffer G_buffer;
 };
 
 
@@ -433,6 +462,8 @@ int main(int argc, char** argv) {
     auto tonemap_program = Program::from_files("tonemap.frag", "screen.vert");
     RendererState renderer;
 
+    auto debug_program = Program::from_files("g_buffer_render.frag", "screen.vert");
+
     for(;;) {
         glfwPollEvents();
         if(glfwWindowShouldClose(window) || glfwGetKey(window, GLFW_KEY_ESCAPE)) {
@@ -464,44 +495,58 @@ int main(int argc, char** argv) {
             // Z-Prepass
             if (OM3D::enable_prepass) {
                 glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Z-Prepass");
-
                 renderer.z_prepass_framebuffer.bind(true, false);
-                scene->render_prepass();
+                scene->render_prepass(Z_PREPASS);
                 glPopDebugGroup();
             }
+            if (OM3D::g_buffer_enabled) {
+                {
+                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "G-Buffer");
 
-            // Shadow-Map
-            {
-                glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Shadow Map");
+                    renderer.G_buffer.bind(!OM3D::enable_prepass, true);
+                    scene->render_prepass(G_BUFFER_DEFERRED);
+                    glPopDebugGroup();
+                }
+                {
+                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "G-Buffer Debug");
 
-                renderer.shadow_map_framebuffer.bind(true, false);
-                scene->render_shadow_map();
-                renderer.shadow_depth_texture.bind(6);
-                glPopDebugGroup();
+                    renderer.tone_map_framebuffer.bind(false, true);
+                    debug_program->bind();
+                    debug_program->set_uniform(HASH("display_step"), u32(debugState));
+                    renderer.albedo_tex.bind(0);
+                    renderer.norm_tex.bind(1);
+                    renderer.depth_texture.bind(2);
+                    draw_full_screen_triangle();
+                    glPopDebugGroup();
+                }
+            } else {
+                // Shadow map
+                {
+                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Shadow Map");
+                    renderer.shadow_map_framebuffer.bind(true, false);
+                    scene->render_prepass(SHADOW_PASS);
+                    renderer.shadow_depth_texture.bind(6);
+                    glPopDebugGroup();
+                }
+                // Main draw
+                {
+                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Main Draw");
+                    renderer.main_framebuffer.bind(!OM3D::enable_prepass, true);
+                    scene->render();
+                    glPopDebugGroup();
+                }
+                // Tonemap
+                {
+                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "ToneMap");
+                    renderer.tone_map_framebuffer.bind(false, true);
+                    tonemap_program->bind();
+                    tonemap_program->set_uniform(HASH("exposure"), exposure);
+                    renderer.lit_hdr_texture.bind(0);
+                    draw_full_screen_triangle();
+                    glPopDebugGroup();
+                }
             }
-
-            // Render the scene
-            {
-                glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Main Draw");
-
-                renderer.main_framebuffer.bind(!OM3D::enable_prepass, true);
-                scene->render();
-                glPopDebugGroup();
-            }
-
-            // Apply a tonemap as a full screen pass
-            {
-                glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "ToneMap");
-
-                renderer.tone_map_framebuffer.bind(false, true);
-                tonemap_program->bind();
-                tonemap_program->set_uniform(HASH("exposure"), exposure);
-                renderer.lit_hdr_texture.bind(0);
-                draw_full_screen_triangle();
-                glPopDebugGroup();
-            }
-
-            // Blit tonemap result to screen
+            // Blit to screen
             {
                 glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Blit");
                 blit_to_screen(renderer.tone_mapped_texture);
@@ -521,6 +566,7 @@ int main(int argc, char** argv) {
     envmap = nullptr;
     imgui = nullptr;
     tonemap_program = nullptr;
+    debug_program = nullptr;
     renderer = {};
     destroy_graphics();
 }

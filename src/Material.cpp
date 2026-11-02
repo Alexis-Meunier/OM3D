@@ -10,7 +10,7 @@ Material::Material() {
 }
 
 void Material::set_program(std::shared_ptr<Program> prog) {
-    _program = std::move(prog);
+    _programs[0] = std::move(prog);
 }
 
 void Material::set_blend_mode(BlendMode blend) {
@@ -45,6 +45,11 @@ void Material::set_stored_uniform(u32 name_hash, UniformValue value) {
         }
     }
     _uniforms.emplace_back(name_hash, std::move(value));
+}
+
+void Material::set_rendering_state(const RenderPass& pass)
+{
+    _render_state = pass;
 }
 
 void Material::bind() const {
@@ -89,10 +94,10 @@ void Material::bind() const {
     }
 
     for(const auto& [h, v] : _uniforms) {
-        _program->set_uniform(h, v);
+        _programs[_render_state]->set_uniform(h, v);
     }
 
-    _program->bind();
+    _programs[_render_state]->bind();
 }
 
 Material Material::textured_pbr_material(bool alpha_test) {
@@ -104,7 +109,11 @@ Material Material::textured_pbr_material(bool alpha_test) {
         defines.emplace_back("ALPHA_TEST");
     }
 
-    material._program = Program::from_files("lit.frag", "basic.vert", defines);
+    material._programs[MAIN] = Program::from_files("lit.frag", "basic.vert", defines);
+    material._programs[Z_PREPASS] = Program::from_files("z_prepass.frag", "basic.vert", defines);
+    material._programs[SHADOW_PASS] = Program::from_files("shadow.frag", "basic.vert", defines);
+    material._programs[G_BUFFER_DEFERRED] = Program::from_files("g_buffer_deferred.frag", "basic.vert", defines);
+    material._programs[G_BUFFER_RENDER] = Program::from_files("g_buffer_render.frag", "basic.vert", defines);
 
     material.set_texture(0u, default_white_texture());
     material.set_texture(1u, default_normal_texture());

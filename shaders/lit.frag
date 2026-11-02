@@ -43,18 +43,28 @@ layout(binding = 1) buffer PointLights {
 };
 
 float shadow_factor(vec3 world_pos) {
-    const vec4 clip = frame.WS_to_CS * vec4(world_pos, 1.0);
-    const vec3 normaled = clip.xyz / clip.w;
+    const vec3 biased_pos = world_pos + frame.sun_dir * frame.sun_bias;
 
+    const vec4 clip = frame.WS_to_CS * vec4(biased_pos, 1.0);
+    const vec3 normaled = clip.xyz / clip.w;
     const vec2 uv = (normaled.xy + 1.0) / 2.0;
 
-    const float depth_bias = normaled.z + frame.sun_bias;
-
+    // Fragments outside the shadow map are lit
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
         return 1.0;
     }
 
-    return texture(shadow_map, vec3(uv, depth_bias));
+    const vec2 texel = 1.0 / vec2(textureSize(shadow_map, 0));
+
+    float shadow = 0.0;
+    for (int i = -1; i <= 1; ++i) {
+        for (int j = -1; j <= 1; ++j) {
+            const vec2 uv_offset = uv + vec2(i, j) * texel;
+            shadow += texture(shadow_map, vec3(uv_offset, normaled.z));
+        }
+    }
+
+    return shadow / 9.0;
 }
 
 void main() {
