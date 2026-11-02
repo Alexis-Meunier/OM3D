@@ -7,6 +7,8 @@
 
 namespace OM3D {
 
+extern bool g_buffer_enabled;
+
 Scene::Scene() {
     _sky_material.set_program(Program::from_files("sky.frag", "screen.vert"));
     _sky_material.set_depth_test_mode(DepthTestMode::None);
@@ -125,62 +127,7 @@ void Scene::update_shadow_matrix() {
     shadow_view_proj = proj * view;
 }
 
-void Scene::render_g_buffer() {
-    TypedBuffer<shader::FrameData> buffer(nullptr, 1);
-    {
-        auto mapping = buffer.map(AccessType::WriteOnly);
-        mapping[0].camera.view_proj = _camera.view_proj_matrix();
-        mapping[0].camera.inv_view_proj = glm::inverse(_camera.view_proj_matrix());
-        mapping[0].camera.position = _camera.position();
-        mapping[0].WS_to_CS = shadow_view_proj;
-        mapping[0].sun_bias = _sun_bias;
-        mapping[0].point_light_count = u32(_point_lights.size());
-        mapping[0].sun_color = _sun_color;
-        mapping[0].sun_dir = glm::normalize(_sun_direction);
-        mapping[0].ibl_intensity = _ibl_intensity;
-    }
-    buffer.bind(BufferUsage::Uniform, 0);
- 
-    {
-        const Frustum frustum = _camera.build_frustum();
-        const glm::vec3 cam_pos = _camera.position();
-
-        for(SceneObject& obj : _objects) {
-            if(!obj.getBbox().should_draw(frustum, cam_pos, obj.transform()) || !obj.material().is_opaque()) {
-                continue;
-            }
-    
-            obj.render(G_BUFFER_DEFERRED);
-        }
-    }
-}
-
-void Scene::render_shadow_map()
-{
-
-    TypedBuffer<shader::FrameData> buffer(nullptr, 1);
-    {
-        auto mapping = buffer.map(AccessType::WriteOnly);
-        mapping[0].camera.view_proj = shadow_view_proj;
-        mapping[0].camera.inv_view_proj = glm::inverse(shadow_view_proj);
-        mapping[0].camera.position = _camera.position();
-        mapping[0].WS_to_CS = shadow_view_proj;
-        mapping[0].sun_bias = _sun_bias;
-        mapping[0].point_light_count = 0;
-        mapping[0].sun_color = _sun_color;
-        mapping[0].sun_dir = glm::normalize(_sun_direction);
-        mapping[0].ibl_intensity = _ibl_intensity;
-    }
-    buffer.bind(BufferUsage::Uniform, 0);
-
-    for (const SceneObject& obj : _objects)
-    {
-        if (obj.material().is_opaque())
-            obj.render(SHADOW_PASS);
-    }
-}
-
-void Scene::render_prepass(const RenderPass& state) const {
+void Scene::render_prepass(const RenderPass& state) {
     update_shadow_matrix();
 
     TypedBuffer<shader::FrameData> buffer(nullptr, 1);
@@ -214,7 +161,51 @@ void Scene::render_prepass(const RenderPass& state) const {
     }
 }
 
+bool should_display(const PointLight& light, const Frustum& f, const glm::vec3& cam_pos)
+{
+    glm::vec3 c = light.position() - cam_pos;
+
+    const glm::vec3 planes[5] =
+    {
+        f._near_normal, f._top_normal, f._bottom_normal,
+        f._right_normal, f._left_normal
+    };
+
+    for (const glm::vec3 n : planes)
+    {
+        if (glm::dot(c, n) > light.radius())
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void Scene::render() const {
+    const Frustum frustum = _camera.build_frustum();
+    const glm::vec3 cam_pos = _camera.position();
+    size_t nb_light = 0;
+
+    // Fill and bind lights buffer
+    TypedBuffer<shader::PointLight> light_buffer(nullptr, std::max(_point_lights.size(), size_t(1)));
+    {
+        auto mapping = light_buffer.map(AccessType::WriteOnly);
+        for(size_t i = 0; i != _point_lights.size(); ++i) {
+            const auto& light = _point_lights[i];
+            if (!should_display(light, frustum, cam_pos))
+                continue;
+
+            mapping[nb_light++] = {
+                light.position(),
+                light.radius(),
+                light.color(),
+                0.0f
+            };
+        }
+    }
+    light_buffer.bind(BufferUsage::Storage, 1);
+
     // Fill and bind frame data buffer
     TypedBuffer<shader::FrameData> buffer(nullptr, 1);
     {
@@ -224,28 +215,12 @@ void Scene::render() const {
         mapping[0].camera.position = _camera.position();
         mapping[0].WS_to_CS = shadow_view_proj;
         mapping[0].sun_bias = _sun_bias;
-        mapping[0].point_light_count = u32(_point_lights.size());
+        mapping[0].point_light_count = u32(nb_light);
         mapping[0].sun_color = _sun_color;
         mapping[0].sun_dir = glm::normalize(_sun_direction);
         mapping[0].ibl_intensity = _ibl_intensity;
     }
     buffer.bind(BufferUsage::Uniform, 0);
-
-    // Fill and bind lights buffer
-    TypedBuffer<shader::PointLight> light_buffer(nullptr, std::max(_point_lights.size(), size_t(1)));
-    {
-        auto mapping = light_buffer.map(AccessType::WriteOnly);
-        for(size_t i = 0; i != _point_lights.size(); ++i) {
-            const auto& light = _point_lights[i];
-            mapping[i] = {
-                light.position(),
-                light.radius(),
-                light.color(),
-                0.0f
-            };
-        }
-    }
-    light_buffer.bind(BufferUsage::Storage, 1);
 
     // Bind envmap
     DEBUG_ASSERT(_envmap && !_envmap->is_null());
@@ -261,16 +236,13 @@ void Scene::render() const {
 
     // Render every object
     {
-        const Frustum frustum = _camera.build_frustum();
-        const glm::vec3 cam_pos = _camera.position();
-
         // Opaque first
         for(const SceneObject& obj : _objects) {
             if (!obj.getBbox().should_draw(frustum, cam_pos, obj.transform()))
                 continue;
 
             if(obj.material().is_opaque()) {
-                obj.render(MAIN);
+                obj.render(g_buffer_enabled ? G_BUFFER_RENDER : MAIN);
             }
         }
 
@@ -280,7 +252,7 @@ void Scene::render() const {
                 continue;
 
             if(!obj.material().is_opaque()) {
-                obj.render(MAIN);
+                obj.render(g_buffer_enabled ? G_BUFFER_RENDER : MAIN);
             }
         }
     }

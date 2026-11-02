@@ -17,6 +17,7 @@ enum DebugState {
     NORMAL = 2,
     ROUGHNESS = 3,
     METALLICITY = 4,
+    FULL = 5,
 };
 
 class SceneObject {
@@ -25,10 +26,6 @@ class SceneObject {
         SceneObject(std::shared_ptr<StaticMesh> mesh = nullptr, std::shared_ptr<Material> material = nullptr);
 
         void render(const RenderPass& state = MAIN) const;
-
-        // void render_prepass() const;
-        // void render_shadow_map() const;
-        // void render_g_buffer() const;
 
         const Material& material() const;
 

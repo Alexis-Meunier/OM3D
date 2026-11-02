@@ -217,9 +217,9 @@ void gui(ImGuiRenderer& imgui) {
 
         if(ImGui::BeginMenu("Debug")) {
 
-            const char* items[] = { "DEPTH", "ALBEDO", "NORMAL", "ROUGHNESS", "METALLICITY"};
-            static int item_current = 0;
-            ImGui::Combo("State", &item_current, items, 5);
+            const char* items[] = { "DEPTH", "ALBEDO", "NORMAL", "ROUGHNESS", "METALLICITY", "FULL"};
+            static int item_current = 5;
+            ImGui::Combo("State", &item_current, items, 6);
             debugState = DebugState(item_current);
             ImGui::EndMenu();
         }
@@ -502,14 +502,12 @@ int main(int argc, char** argv) {
             if (OM3D::g_buffer_enabled) {
                 {
                     glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "G-Buffer");
-
                     renderer.G_buffer.bind(!OM3D::enable_prepass, true);
                     scene->render_prepass(G_BUFFER_DEFERRED);
                     glPopDebugGroup();
                 }
                 {
                     glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "G-Buffer Debug");
-
                     renderer.tone_map_framebuffer.bind(false, true);
                     debug_program->bind();
                     debug_program->set_uniform(HASH("display_step"), u32(debugState));
