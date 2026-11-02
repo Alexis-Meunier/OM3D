@@ -5,8 +5,8 @@
 
 layout(location = 0) out vec4 out_color;
 
-layout(binding = 0) uniform sampler2D in_color_texture;    // albedo.rgb + roughness
-layout(binding = 1) uniform sampler2D in_normal_texture;   // normal.xyz (packed) + metalness
+layout(binding = 0) uniform sampler2D in_color_texture;
+layout(binding = 1) uniform sampler2D in_normal_texture;
 layout(binding = 2) uniform sampler2D in_depth_texture;
 
 layout(binding = 4) uniform samplerCube in_envmap;
@@ -23,23 +23,35 @@ layout(binding = 1) buffer PointLights {
     PointLight point_lights[];
 };
 
-// Rebuild the world-space position from the pixel's UV and its depth
 vec3 world_position(vec2 uv, float depth) {
-    const vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);   // z is already in [0,1]: do NOT remap it
+    const vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
     const vec4 ws = frame.camera.inv_view_proj * ndc;
     return ws.xyz / ws.w;
 }
 
 float shadow_factor(vec3 world_pos) {
-    // paste your current version here (with sun_bias and the 3x3 PCF loop)
     const vec3 biased_pos = world_pos + frame.sun_dir * frame.sun_bias;
+
     const vec4 clip = frame.WS_to_CS * vec4(biased_pos, 1.0);
-    const vec3 ndc = clip.xyz / clip.w;
-    const vec2 uv = ndc.xy * 0.5 + 0.5;
+    const vec3 normaled = clip.xyz / clip.w;
+    const vec2 uv = (normaled.xy + 1.0) / 2.0;
+
+    // Fragments outside the shadow map are lit
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
         return 1.0;
     }
-    return texture(shadow_map, vec3(uv, ndc.z));
+
+    const vec2 texel = 1.0 / vec2(textureSize(shadow_map, 0));
+
+    float shadow = 0.0;
+    for (int i = -1; i <= 1; ++i) {
+        for (int j = -1; j <= 1; ++j) {
+            const vec2 uv_offset = uv + vec2(i, j) * texel;
+            shadow += texture(shadow_map, vec3(uv_offset, normaled.z));
+        }
+    }
+
+    return shadow / 9.0;
 }
 
 void main() {
@@ -47,28 +59,27 @@ void main() {
     const vec2 uv = gl_FragCoord.xy / vec2(textureSize(in_depth_texture, 0));
 
     const vec4 albedo_tex = texelFetch(in_color_texture, px, 0);
-    const vec4 norm_tex   = texelFetch(in_normal_texture, px, 0);
-    const float depth     = texelFetch(in_depth_texture, px, 0).r;
+    const vec4 norm_tex = texelFetch(in_normal_texture, px, 0);
+    const float depth = texelFetch(in_depth_texture, px, 0).r;
 
     vec3 color = vec3(0.0);
     switch (display_step) {
         case 0: color = vec3(pow(depth, 0.35)); break;
-        case 1: color = albedo_tex.rgb;         break;
-        case 2: color = norm_tex.rgb;           break;
-        case 3: color = vec3(albedo_tex.a);     break;
-        case 4: color = vec3(norm_tex.a);       break;
-        case 5: {
-            // Reverse-Z: depth 0 is infinitely far, so this is sky (nothing to light)
+        case 1: color = albedo_tex.rgb; break;
+        case 2: color = norm_tex.rgb; break;
+        case 3: color = vec3(albedo_tex.a); break;
+        case 4: color = vec3(norm_tex.a); break;
+        case 5: { // TODO:
             if (depth <= 0.0) {
                 break;
             }
 
-            const vec3 position   = world_position(uv, depth);
-            const vec3 normal     = normalize(norm_tex.rgb * 2.0 - 1.0);   // unpack from [0,1]
+            const vec3 position = world_position(uv, depth);
+            const vec3 normal = normalize(norm_tex.rgb * 2.0 - 1.0);
             const vec3 base_color = albedo_tex.rgb;
             const float roughness = albedo_tex.a;
-            const float metallic  = norm_tex.a;
-            const vec3 view_dir   = normalize(frame.camera.position - position);
+            const float metallic = norm_tex.a;
+            const vec3 view_dir = normalize(frame.camera.position - position);
 
             vec3 acc = eval_ibl(in_envmap, brdf_lut, normal, view_dir, base_color, metallic, roughness)
                        * frame.ibl_intensity;
@@ -78,7 +89,7 @@ void main() {
 
             for (uint i = 0; i != frame.point_light_count; ++i) {
                 const PointLight light = point_lights[i];
-                const vec3 to_light = light.position - position;   // <- your "in_position"
+                const vec3 to_light = light.position - position;
                 const float dist = length(to_light);
                 const vec3 light_vec = to_light / dist;
 
