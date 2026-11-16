@@ -25,6 +25,14 @@ void Material::set_double_sided(bool double_sided) {
     _double_sided = double_sided;
 }
 
+void Material::set_depth_write(bool depth_write) {
+    _depth_write = depth_write;
+}
+
+void Material::set_cull_front_faces(bool cull_front) {
+    _cull_front = cull_front;
+}
+
 void Material::set_texture(u32 slot, std::shared_ptr<Texture> tex) {
     if(const auto it = std::find_if(_textures.begin(), _textures.end(), [&](const auto& t) { return t.first == slot; }); it != _textures.end()) {
         it->second = std::move(tex);
@@ -64,7 +72,21 @@ void Material::bind() const {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         break;
+
+        case BlendMode::Additive:
+            ENABLE_BACKCULL_CCW;
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE, GL_ONE);
+        break;
     }
+
+    if(_cull_front) {
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
+        glFrontFace(GL_CCW);
+    }
+
+    glDepthMask(_depth_write ? GL_TRUE : GL_FALSE);
 
     switch(_depth_test_mode) {
         case DepthTestMode::None:

@@ -12,6 +12,7 @@ namespace OM3D {
 enum class BlendMode {
     None,
     Alpha,
+    Additive,
 };
 
 enum class DepthTestMode {
@@ -27,6 +28,7 @@ enum RenderPass {
     G_BUFFER_RENDER = 2,
     Z_PREPASS = 3,
     SHADOW_PASS = 4,
+    LIGHT_PASS = 5,
 };
 
 class Material {
@@ -38,6 +40,8 @@ class Material {
         void set_blend_mode(BlendMode blend);
         void set_depth_test_mode(DepthTestMode depth);
         void set_double_sided(bool double_sided);
+        void set_depth_write(bool depth_write);
+        void set_cull_front_faces(bool cull_front);
         void set_texture(u32 slot, std::shared_ptr<Texture> tex);
 
         bool is_opaque() const;
@@ -60,13 +64,15 @@ class Material {
         void set_rendering_state(const RenderPass& pass);
 
     private:
-        std::shared_ptr<Program> _programs[5];
+        std::shared_ptr<Program> _programs[LIGHT_PASS + 1];
         std::vector<std::pair<u32, std::shared_ptr<Texture>>> _textures;
         std::vector<std::pair<u32, UniformValue>> _uniforms;
 
         BlendMode _blend_mode = BlendMode::None;
         DepthTestMode _depth_test_mode = DepthTestMode::Standard;
         bool _double_sided = false;
+        bool _depth_write = true;
+        bool _cull_front = false;
         bool _alpha_test = false;
 
         RenderPass _render_state = MAIN;

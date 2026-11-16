@@ -8,6 +8,7 @@
 #include <Vertex.h>
 
 #include <vector>
+#include <string>
 
 namespace OM3D {
 
@@ -15,6 +16,8 @@ struct MeshData {
     std::vector<Vertex> vertices;
     std::vector<u32> indices;
 };
+
+Result<MeshData> load_first_mesh_data(const std::string& file_name);
 
 class StaticMesh : NonCopyable {
 

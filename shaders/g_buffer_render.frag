@@ -36,7 +36,6 @@ float shadow_factor(vec3 world_pos) {
     const vec3 normaled = clip.xyz / clip.w;
     const vec2 uv = (normaled.xy + 1.0) / 2.0;
 
-    // Fragments outside the shadow map are lit
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
         return 1.0;
     }

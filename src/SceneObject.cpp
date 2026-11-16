@@ -18,9 +18,13 @@ void SceneObject::render(const RenderPass& state) const {
 
     // MAIN || G_BUFFER_RENDER || G_BUFFER_DEFERRED
     if (state < 3)
+    {
         _material->set_depth_test_mode((enable_prepass && can_use_prepass()) ? DepthTestMode::Equal : DepthTestMode::Standard);
-    else
+    }
+    else if (state != LIGHT_PASS)
+    {
         _material->set_depth_test_mode(DepthTestMode::Standard);
+    }
 
     _material->set_uniform(HASH("model"), transform());
     _material->bind();

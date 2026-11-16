@@ -5,6 +5,9 @@
 
 #include <shader_structs.h>
 
+#include <glm/gtc/matrix_transform.hpp>
+#include <glad/gl.h>
+
 namespace OM3D {
 
 extern bool g_buffer_enabled;
@@ -63,7 +66,7 @@ void Scene::set_sun(float altitude, float azimuth, glm::vec3 color) {
     const float alt = glm::radians(altitude);
     const float azi = glm::radians(azimuth);
     // Convert from polar to cartesian
-    _sun_direction = glm::vec3(sin(azi) * cos(alt), sin(alt), cos(azi) * cos(alt));
+    sun_direction = glm::vec3(sin(azi) * cos(alt), sin(alt), cos(azi) * cos(alt));
     _sun_color = color;
 }
 
@@ -119,7 +122,7 @@ void Scene::update_shadow_matrix() {
     const glm::vec3 center = (mn + mx) * 0.5f;
     const float radius = glm::length(mx - mn) * 0.5f;
 
-    const glm::vec3 dir = glm::normalize(_sun_direction);
+    const glm::vec3 dir = glm::normalize(sun_direction);
     const glm::vec3 up = std::abs(dir.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
 
     const glm::mat4 view = glm::lookAt(center + dir * radius, center, up);
@@ -141,7 +144,7 @@ void Scene::render_shadow_map()
         mapping[0].sun_bias = _sun_bias;
         mapping[0].point_light_count = 0;
         mapping[0].sun_color = _sun_color;
-        mapping[0].sun_dir = glm::normalize(_sun_direction);
+        mapping[0].sun_dir = glm::normalize(sun_direction);
         mapping[0].ibl_intensity = _ibl_intensity;
     }
     buffer.bind(BufferUsage::Uniform, 0);
@@ -151,6 +154,139 @@ void Scene::render_shadow_map()
         if (obj.material().is_opaque())
             obj.render(SHADOW_PASS);
     }
+}
+
+bool should_display(const PointLight& light, const Frustum& f, const glm::vec3& cam_pos)
+{
+    glm::vec3 c = light.position() - cam_pos;
+
+    const glm::vec3 planes[5] =
+    {
+        f._near_normal, f._top_normal, f._bottom_normal,
+        f._right_normal, f._left_normal
+    };
+
+    for (const glm::vec3 n : planes)
+    {
+        if (glm::dot(c, n) < -light.radius())
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+TypedBuffer<shader::FrameData> Scene::make_frame_data(u32 point_light_count) const {
+    TypedBuffer<shader::FrameData> buffer(nullptr, 1);
+    {
+        auto mapping = buffer.map(AccessType::WriteOnly);
+        mapping[0].camera.view_proj = _camera.view_proj_matrix();
+        mapping[0].camera.inv_view_proj = glm::inverse(_camera.view_proj_matrix());
+        mapping[0].camera.position = _camera.position();
+        mapping[0].WS_to_CS = shadow_view_proj;
+        mapping[0].sun_bias = _sun_bias;
+        mapping[0].point_light_count = point_light_count;
+        mapping[0].sun_color = _sun_color;
+        mapping[0].sun_dir = glm::normalize(sun_direction);
+        mapping[0].ibl_intensity = _ibl_intensity;
+    }
+    return buffer;
+}
+
+static void restore_default_render_state() {
+    ENABLE_BACKCULL_CCW;
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+}
+
+TypedBuffer<shader::PointLight> Scene::make_point_light_buffer(const Frustum& frustum, u32& count) const {
+    const glm::vec3 cam_pos = _camera.position();
+    count = 0;
+
+    TypedBuffer<shader::PointLight> light_buffer(nullptr, std::max(_point_lights.size(), size_t(1)));
+    {
+        auto mapping = light_buffer.map(AccessType::WriteOnly);
+        for(const PointLight& light : _point_lights) {
+            if(!should_display(light, frustum, cam_pos)) {
+                continue;
+            }
+            mapping[count++] = {
+                light.position(),
+                light.radius(),
+                light.color(),
+                0.0f
+            };
+        }
+    }
+    return light_buffer;
+}
+
+void Scene::render_transparent() const {
+    const Frustum frustum = _camera.build_frustum();
+    const glm::vec3 cam_pos = _camera.position();
+
+    u32 nb_light = 0;
+    const TypedBuffer<shader::PointLight> light_buffer = make_point_light_buffer(frustum, nb_light);
+    light_buffer.bind(BufferUsage::Storage, 1);
+
+    const TypedBuffer<shader::FrameData> buffer = make_frame_data(nb_light);
+    buffer.bind(BufferUsage::Uniform, 0);
+
+    DEBUG_ASSERT(_envmap && !_envmap->is_null());
+    _envmap->bind(4);
+    brdf_lut().bind(5);
+
+    for(const SceneObject& obj : _objects) {
+        if(obj.material().is_opaque() || !obj.getBbox().should_draw(frustum, cam_pos, obj.transform())) {
+            continue;
+        }
+        obj.render(MAIN);
+    }
+
+    restore_default_render_state();
+}
+
+void Scene::render_sun_light(const Material& sun_material) const {
+    const TypedBuffer<shader::FrameData> buffer = make_frame_data(0);
+    buffer.bind(BufferUsage::Uniform, 0);
+
+    DEBUG_ASSERT(_envmap && !_envmap->is_null());
+    _envmap->bind(4);
+    brdf_lut().bind(5);
+
+    _sky_material.bind();
+    _sky_material.set_uniform(HASH("intensity"), _ibl_intensity);
+    draw_full_screen_triangle();
+
+    sun_material.bind();
+    draw_full_screen_triangle();
+}
+
+void Scene::render_point_lights(const Material& light_material, const StaticMesh& sphere) const {
+    const TypedBuffer<shader::FrameData> buffer = make_frame_data(0);
+    buffer.bind(BufferUsage::Uniform, 0);
+
+    const Frustum frustum = _camera.build_frustum();
+    const glm::vec3 cam_pos = _camera.position();
+
+    for(const PointLight& light : _point_lights) {
+        if(!should_display(light, frustum, cam_pos)) {
+            continue;
+        }
+
+        const float scale = light.radius() * light_volume_margin;
+        const glm::mat4 model = glm::scale(glm::translate(glm::mat4(1.0f), light.position()), glm::vec3(scale));
+
+        light_material.set_uniform(HASH("model"), model);
+        light_material.set_uniform(HASH("light_position"), light.position());
+        light_material.set_uniform(HASH("light_radius"), light.radius());
+        light_material.set_uniform(HASH("light_color"), light.color());
+        light_material.bind();
+        sphere.draw();
+    }
+
+    restore_default_render_state();
 }
 
 void Scene::render_prepass(const RenderPass& state) {
@@ -164,7 +300,7 @@ void Scene::render_prepass(const RenderPass& state) {
         mapping[0].sun_bias = _sun_bias;
         mapping[0].point_light_count = 0;
         mapping[0].sun_color = _sun_color;
-        mapping[0].sun_dir = glm::normalize(_sun_direction);
+        mapping[0].sun_dir = glm::normalize(sun_direction);
         mapping[0].ibl_intensity = _ibl_intensity;
     }
     buffer.bind(BufferUsage::Uniform, 0);
@@ -185,65 +321,15 @@ void Scene::render_prepass(const RenderPass& state) {
     }
 }
 
-bool should_display(const PointLight& light, const Frustum& f, const glm::vec3& cam_pos)
-{
-    glm::vec3 c = light.position() - cam_pos;
-
-    const glm::vec3 planes[5] =
-    {
-        f._near_normal, f._top_normal, f._bottom_normal,
-        f._right_normal, f._left_normal
-    };
-
-    for (const glm::vec3 n : planes)
-    {
-        if (glm::dot(c, n) > light.radius())
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 void Scene::render() const {
     const Frustum frustum = _camera.build_frustum();
     const glm::vec3 cam_pos = _camera.position();
-    size_t nb_light = 0;
-
-    // Fill and bind lights buffer
-    TypedBuffer<shader::PointLight> light_buffer(nullptr, std::max(_point_lights.size(), size_t(1)));
-    {
-        auto mapping = light_buffer.map(AccessType::WriteOnly);
-        for(size_t i = 0; i != _point_lights.size(); ++i) {
-            const auto& light = _point_lights[i];
-            if (!should_display(light, frustum, cam_pos))
-                continue;
-
-            mapping[nb_light++] = {
-                light.position(),
-                light.radius(),
-                light.color(),
-                0.0f
-            };
-        }
-    }
+    u32 nb_light = 0;
+    const TypedBuffer<shader::PointLight> light_buffer = make_point_light_buffer(frustum, nb_light);
     light_buffer.bind(BufferUsage::Storage, 1);
 
     // Fill and bind frame data buffer
-    TypedBuffer<shader::FrameData> buffer(nullptr, 1);
-    {
-        auto mapping = buffer.map(AccessType::WriteOnly);
-        mapping[0].camera.view_proj = _camera.view_proj_matrix();
-        mapping[0].camera.inv_view_proj = glm::inverse(_camera.view_proj_matrix());
-        mapping[0].camera.position = _camera.position();
-        mapping[0].WS_to_CS = shadow_view_proj;
-        mapping[0].sun_bias = _sun_bias;
-        mapping[0].point_light_count = u32(nb_light);
-        mapping[0].sun_color = _sun_color;
-        mapping[0].sun_dir = glm::normalize(_sun_direction);
-        mapping[0].ibl_intensity = _ibl_intensity;
-    }
+    const TypedBuffer<shader::FrameData> buffer = make_frame_data(nb_light);
     buffer.bind(BufferUsage::Uniform, 0);
 
     // Bind envmap

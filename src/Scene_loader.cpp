@@ -302,6 +302,39 @@ static void compute_tangents(MeshData& mesh) {
 }
 
 
+Result<MeshData> load_first_mesh_data(const std::string& file_name) {
+    tinygltf::TinyGLTF ctx;
+    tinygltf::Model gltf;
+
+    std::string err;
+    std::string warn;
+    const bool ok = ends_with(file_name, ".gltf")
+            ? ctx.LoadASCIIFromFile(&gltf, &err, &warn, file_name)
+            : ctx.LoadBinaryFromFile(&gltf, &err, &warn, file_name);
+
+    if(!err.empty()) {
+        std::cerr << "Error while loading gltf: " << err << std::endl;
+    }
+    if(!ok) {
+        return {false, {}};
+    }
+
+    for(const tinygltf::Mesh& mesh : gltf.meshes) {
+        for(const tinygltf::Primitive& prim : mesh.primitives) {
+            if(prim.mode != TINYGLTF_MODE_TRIANGLES) {
+                continue;
+            }
+            auto data = build_mesh_data(gltf, prim);
+            if(data.is_ok && data.value.vertices[0].tangent_bitangent_sign == glm::vec4(0.0f)) {
+                compute_tangents(data.value);
+            }
+            return data;
+        }
+    }
+
+    return {false, {}};
+}
+
 Result<std::unique_ptr<Scene>> Scene::from_gltf(const std::string& file_name) {
     const double time = program_time();
     DEFER(std::cout << file_name << " loaded in " << std::round((program_time() - time) * 100.0) / 100.0 << "s" << std::endl);
@@ -444,6 +477,8 @@ Result<std::unique_ptr<Scene>> Scene::from_gltf(const std::string& file_name) {
                     if(!opaque && !mask) {
                         mat->set_blend_mode(BlendMode::Alpha);
                         mat->set_depth_test_mode(DepthTestMode::None);
+                        // Transparents are depth tested against opaques but never write depth
+                        mat->set_depth_write(false);
                     }
 
                     if(albedo) {

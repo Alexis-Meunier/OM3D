@@ -18,6 +18,7 @@ enum DebugState {
     ROUGHNESS = 3,
     METALLICITY = 4,
     FULL = 5,
+    LIGHTING = 6,
 };
 
 class SceneObject {

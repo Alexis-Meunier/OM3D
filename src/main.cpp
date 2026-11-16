@@ -29,7 +29,7 @@ static float exposure = 0.33f;
 
 static std::unique_ptr<Scene> scene;
 static std::shared_ptr<Texture> envmap;
-static DebugState debugState = DEPTH;
+static DebugState debugState = LIGHTING;
 
 static std::string render_path = "bistro.glb";
 
@@ -226,9 +226,9 @@ void gui(ImGuiRenderer& imgui) {
 
         if(ImGui::BeginMenu("Debug")) {
 
-            const char* items[] = { "DEPTH", "ALBEDO", "NORMAL", "ROUGHNESS", "METALLICITY", "FULL"};
-            static int item_current = 0;
-            ImGui::Combo("State", &item_current, items, 6);
+            const char* items[] = { "DEPTH", "ALBEDO", "NORMAL", "ROUGHNESS", "METALLICITY", "FULL", "LIGHTING"};
+            static int item_current = int(LIGHTING);
+            ImGui::Combo("State", &item_current, items, 7);
             debugState = DebugState(item_current);
             ImGui::EndMenu();
         }
@@ -370,7 +370,13 @@ void gui(ImGuiRenderer& imgui) {
 }
 
 void load_default_scene() {
-    load_scene(std::string(data_path) + render_path);
+    // -s accepts either a path (absolute or relative to the working directory) or a file name inside data/
+    const std::string scene_path = std::filesystem::exists(render_path) ? render_path : std::string(data_path) + render_path;
+    load_scene(scene_path);
+    if(!scene) {
+        std::cerr << "Fatal: no scene loaded, exiting" << std::endl;
+        std::exit(1);
+    }
     load_envmap(std::string(data_path) + "pretoria_gardens.jpg");
 
     // Add lights
@@ -416,6 +422,10 @@ struct RendererState {
                     &state.norm_tex,
                 }
             );
+
+            state.light_texture = Texture(size, ImageFormat::RGBA16_FLOAT, WrapMode::Clamp);
+            // Shares the G-buffer depth: used for the light volume depth test (depth writes stay disabled)
+            state.light_buffer = Framebuffer(&state.depth_texture, std::array{&state.light_texture});
         }
 
         return state;
@@ -437,6 +447,10 @@ struct RendererState {
     Texture norm_tex;
     Texture albedo_tex;
     Framebuffer G_buffer;
+
+    // Light Declaration
+    Texture light_texture;
+    Framebuffer light_buffer;
 };
 
 
@@ -472,6 +486,22 @@ int main(int argc, char** argv) {
     RendererState renderer;
 
     auto debug_program = Program::from_files("g_buffer_render.frag", "screen.vert");
+
+    Material sun_material;
+    sun_material.set_program(Program::from_files("light_g_buffer.frag", "screen.vert"));
+    sun_material.set_depth_test_mode(DepthTestMode::None);
+    sun_material.set_depth_write(false);
+
+    Material point_light_material;
+    point_light_material.set_program(Program::from_files("point_light.frag", "basic.vert"));
+    point_light_material.set_blend_mode(BlendMode::Additive);
+    point_light_material.set_cull_front_faces(true);
+    point_light_material.set_depth_test_mode(DepthTestMode::Reversed);
+    point_light_material.set_depth_write(false);
+
+    const auto sphere_data = load_first_mesh_data(std::string(data_path) + "sphere.glb");
+    ALWAYS_ASSERT(sphere_data.is_ok, "Unable to load sphere.glb");
+    const StaticMesh light_sphere(sphere_data.value);
 
     for(;;) {
         glfwPollEvents();
@@ -516,6 +546,38 @@ int main(int argc, char** argv) {
                     glPopDebugGroup();
                 }
                 {
+                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Shadow Map");
+                    renderer.shadow_map_framebuffer.bind(true, false);
+                    scene->render_shadow_map();
+                    glPopDebugGroup();
+                }
+                {
+                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Light Pass");
+                    renderer.light_buffer.bind(false, true);
+                    renderer.albedo_tex.bind(0);
+                    renderer.norm_tex.bind(1);
+                    renderer.depth_texture.bind(2);
+                    renderer.shadow_depth_texture.bind(6);
+                    scene->render_sun_light(sun_material);
+                    scene->render_point_lights(point_light_material, light_sphere);
+                    glPopDebugGroup();
+                }
+                {
+                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Transparent Forward");
+                    renderer.light_buffer.bind(false, false);
+                    renderer.shadow_depth_texture.bind(6);
+                    scene->render_transparent();
+                    glPopDebugGroup();
+                }
+                if (debugState == LIGHTING) {
+                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "ToneMap");
+                    renderer.tone_map_framebuffer.bind(false, true);
+                    tonemap_program->bind();
+                    tonemap_program->set_uniform(HASH("exposure"), exposure);
+                    renderer.light_texture.bind(0);
+                    draw_full_screen_triangle();
+                    glPopDebugGroup();
+                } else {
                     glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "G-Buffer Debug");
                     renderer.tone_map_framebuffer.bind(false, true);
                     debug_program->bind();

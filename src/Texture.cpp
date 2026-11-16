@@ -57,7 +57,7 @@ Texture::Texture(const TextureData& data) :
     }
 }
 
-Texture::Texture(const glm::uvec2 &size, ImageFormat format, WrapMode wrap, bool is_shadow_pass) :
+Texture::Texture(const glm::uvec2 &size, ImageFormat format, WrapMode wrap, bool disable_interpolation) :
     _handle(create_texture_handle(GL_TEXTURE_2D)),
     _size(size),
     _format(format),
@@ -70,7 +70,7 @@ Texture::Texture(const glm::uvec2 &size, ImageFormat format, WrapMode wrap, bool
     glTextureParameteri(_handle.get(), GL_TEXTURE_WRAP_R, gl_wrap);
     glTextureParameteri(_handle.get(), GL_TEXTURE_WRAP_S, gl_wrap);
     glTextureParameteri(_handle.get(), GL_TEXTURE_WRAP_T, gl_wrap);
-    if (is_shadow_pass)
+    if (disable_interpolation)
     {
         glTextureParameteri(_handle.get(), GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTextureParameteri(_handle.get(), GL_TEXTURE_MAG_FILTER, GL_LINEAR);
