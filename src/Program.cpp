@@ -195,7 +195,7 @@ bool Program::is_compute() const {
 }
 
 std::shared_ptr<Program> Program::from_file(const std::string& comp, Span<const std::string> defines) {
-    static std::unordered_map<std::vector<std::string>, std::weak_ptr<Program>, CollectionHasher<std::vector<std::string>>> loaded;
+    static std::unordered_map<std::vector<std::string>, std::weak_ptr<Program>, CollectionHasher<std::vector<std::string>>> loaded; // magie noire
 
     std::vector<std::string> key(defines.begin(), defines.end());
     key.emplace_back(comp);
@@ -210,7 +210,7 @@ std::shared_ptr<Program> Program::from_file(const std::string& comp, Span<const 
 }
 
 std::shared_ptr<Program> Program::from_files(const std::string& frag, const std::string& vert, Span<const std::string> defines) {
-    static std::unordered_map<std::vector<std::string>, std::weak_ptr<Program>, CollectionHasher<std::vector<std::string>>> loaded;
+    static std::unordered_map<std::vector<std::string>, std::weak_ptr<Program>, CollectionHasher<std::vector<std::string>>> loaded; // magie noire
 
     std::vector<std::string> key(defines.begin(), defines.end());
     key.emplace_back(frag);

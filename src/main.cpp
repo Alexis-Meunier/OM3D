@@ -415,15 +415,17 @@ struct RendererState {
             // G-Buffer Definition
             state.albedo_tex = Texture(size, ImageFormat::RGBA8_sRGB, WrapMode::Clamp);
             state.norm_tex = Texture(size, ImageFormat::RGBA8_UNORM, WrapMode::Clamp);
+            state.light_texture = Texture(size, ImageFormat::RGBA16_FLOAT, WrapMode::Clamp);
+            // 3rd target: emissive, written straight into the HDR light texture
             state.G_buffer = Framebuffer(
                 &state.depth_texture,
                 std::array{
                     &state.albedo_tex,
                     &state.norm_tex,
+                    &state.light_texture,
                 }
             );
 
-            state.light_texture = Texture(size, ImageFormat::RGBA16_FLOAT, WrapMode::Clamp);
             // Shares the G-buffer depth: used for the light volume depth test (depth writes stay disabled)
             state.light_buffer = Framebuffer(&state.depth_texture, std::array{&state.light_texture});
         }
@@ -489,6 +491,7 @@ int main(int argc, char** argv) {
 
     Material sun_material;
     sun_material.set_program(Program::from_files("light_g_buffer.frag", "screen.vert"));
+    sun_material.set_blend_mode(BlendMode::Additive);
     sun_material.set_depth_test_mode(DepthTestMode::None);
     sun_material.set_depth_write(false);
 
@@ -542,6 +545,8 @@ int main(int argc, char** argv) {
                 {
                     glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "G-Buffer");
                     renderer.G_buffer.bind(!OM3D::enable_prepass, true);
+                    const float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                    glClearBufferfv(GL_COLOR, 2, black);
                     scene->render_prepass(G_BUFFER_DEFERRED);
                     glPopDebugGroup();
                 }
@@ -553,7 +558,7 @@ int main(int argc, char** argv) {
                 }
                 {
                     glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Light Pass");
-                    renderer.light_buffer.bind(false, true);
+                    renderer.light_buffer.bind(false, false);
                     renderer.albedo_tex.bind(0);
                     renderer.norm_tex.bind(1);
                     renderer.depth_texture.bind(2);
@@ -569,22 +574,21 @@ int main(int argc, char** argv) {
                     scene->render_transparent();
                     glPopDebugGroup();
                 }
-                if (debugState == LIGHTING) {
-                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "ToneMap");
+                {
                     renderer.tone_map_framebuffer.bind(false, true);
-                    tonemap_program->bind();
-                    tonemap_program->set_uniform(HASH("exposure"), exposure);
-                    renderer.light_texture.bind(0);
-                    draw_full_screen_triangle();
-                    glPopDebugGroup();
-                } else {
-                    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "G-Buffer Debug");
-                    renderer.tone_map_framebuffer.bind(false, true);
-                    debug_program->bind();
-                    debug_program->set_uniform(HASH("display_step"), u32(debugState));
-                    renderer.albedo_tex.bind(0);
-                    renderer.norm_tex.bind(1);
-                    renderer.depth_texture.bind(2);
+                    if (debugState == LIGHTING) {
+                        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "ToneMap");
+                        tonemap_program->bind();
+                        tonemap_program->set_uniform(HASH("exposure"), exposure);
+                        renderer.light_texture.bind(0);
+                    } else {
+                        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "G-Buffer Debug");
+                        debug_program->bind();
+                        debug_program->set_uniform(HASH("display_step"), u32(debugState));
+                        renderer.albedo_tex.bind(0);
+                        renderer.norm_tex.bind(1);
+                        renderer.depth_texture.bind(2);
+                    }
                     draw_full_screen_triangle();
                     glPopDebugGroup();
                 }

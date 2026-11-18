@@ -255,10 +255,6 @@ void Scene::render_sun_light(const Material& sun_material) const {
     _envmap->bind(4);
     brdf_lut().bind(5);
 
-    _sky_material.bind();
-    _sky_material.set_uniform(HASH("intensity"), _ibl_intensity);
-    draw_full_screen_triangle();
-
     sun_material.bind();
     draw_full_screen_triangle();
 }

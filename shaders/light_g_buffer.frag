@@ -43,7 +43,10 @@ void main() {
     const GBufferSample g = read_g_buffer(ivec2(gl_FragCoord.xy));
 
     if (g.depth <= 0.0) {
-        discard;
+        const vec2 uv = gl_FragCoord.xy / vec2(textureSize(in_depth_texture, 0));
+        const vec3 sky_dir = normalize(unproject(uv, 0.001, frame.camera.inv_view_proj) - frame.camera.position);
+        out_color = vec4(texture(in_envmap, sky_dir).rgb * frame.ibl_intensity, 0.0);
+        return;
     }
 
     const vec3 view_dir = normalize(frame.camera.position - g.position);

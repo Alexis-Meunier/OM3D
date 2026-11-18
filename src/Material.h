@@ -46,10 +46,8 @@ class Material {
 
         bool is_opaque() const;
 
-        // Uniform will be stored inside the material and reset every time its bound
         void set_stored_uniform(u32 name_hash, UniformValue value);
 
-        // Uniform is set immediately and might get overriden by 'set_uniform' called on OTHER materials
         template<typename... Args>
         void set_uniform(Args&&... args) const {
             _programs[_render_state]->set_uniform(FWD(args)...);
@@ -64,7 +62,7 @@ class Material {
         void set_rendering_state(const RenderPass& pass);
 
     private:
-        std::shared_ptr<Program> _programs[LIGHT_PASS + 1];
+        std::shared_ptr<Program> _programs[LIGHT_PASS];
         std::vector<std::pair<u32, std::shared_ptr<Texture>>> _textures;
         std::vector<std::pair<u32, UniformValue>> _uniforms;
 

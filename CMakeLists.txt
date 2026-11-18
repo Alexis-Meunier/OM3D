@@ -12,6 +12,8 @@ endif()
 
 
 # setup external libraries
+# CMake >= 4 refuses subprojects declaring cmake_minimum_required < 3.5 (e.g. glm)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(external/glfw)
 add_subdirectory(external/glm)
 

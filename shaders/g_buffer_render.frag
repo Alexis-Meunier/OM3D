@@ -23,12 +23,6 @@ layout(binding = 1) buffer PointLights {
     PointLight point_lights[];
 };
 
-vec3 world_position(vec2 uv, float depth) {
-    const vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    const vec4 ws = frame.camera.inv_view_proj * ndc;
-    return ws.xyz / ws.w;
-}
-
 float shadow_factor(vec3 world_pos) {
     const vec3 biased_pos = world_pos + frame.sun_dir * frame.sun_bias;
 
@@ -73,7 +67,7 @@ void main() {
                 break;
             }
 
-            const vec3 position = world_position(uv, depth);
+            const vec3 position = unproject(uv, depth, frame.camera.inv_view_proj);
             const vec3 normal = normalize(norm_tex.rgb * 2.0 - 1.0);
             const vec3 base_color = albedo_tex.rgb;
             const float roughness = albedo_tex.a;
